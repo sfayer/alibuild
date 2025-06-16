@@ -8,6 +8,7 @@ import sys
 import os
 import re
 import platform
+import copy
 
 from datetime import datetime
 from collections import OrderedDict
@@ -573,6 +574,7 @@ def getPackageList(packages, specs, configDir, preferSystem, noSystem,
               replacement = spec["prefer_system_replacement_specs"][replacement_matcher]
               break
           if replacement:
+            replacement = copy.deepcopy(replacement)
             # We must keep the package name the same, since it is used to
             # specify dependencies.
             replacement["package"] = spec["package"]
@@ -582,7 +584,20 @@ def getPackageList(packages, specs, configDir, preferSystem, noSystem,
             spec = replacement
             # Allows generalising the version based on the actual key provided
             spec["version"] = spec["version"].replace("%(key)s", key)
+            # Also replace %(key)s in environment variables
+            if "env" in spec:
+              for env_key, env_value in spec["env"].items():
+                if isinstance(env_value, str):
+                  spec["env"][env_key] = env_value.replace("%(key)s", key)
             recipe = replacement.get("recipe", "")
+            # Inject environment variables into the recipe since they're not available during execution
+            if "env" in spec and recipe:
+              env_exports = []
+              for env_key, env_value in spec["env"].items():
+                if isinstance(env_value, str):
+                  env_exports.append(f'export {env_key}="{env_value}"')
+              if env_exports:
+                recipe = "\n".join(env_exports) + "\n" + recipe
             # If there's an explicitly-specified recipe, we're still building
             # the package. If not, aliBuild will still "build" it, but it's
             # basically instantaneous, so report to the user that we're taking
